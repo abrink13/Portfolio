@@ -1,4 +1,4 @@
 # Portfolio
 
-[Heart-Disease-Risk.pdf](https://github.com/abrink13/Data-Science-Portfolio/files/10726274/Heart-Disease-Risk.pdf)
+[Heart-Disease-Risk.pdf](Predicting-Heart-Disease-Risk-Using-Clinical-Variables.pdf)
 
