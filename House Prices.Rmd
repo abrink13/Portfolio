@@ -1,0 +1,948 @@
+---
+title: "House Prices Lasso Regression"
+author: "Autumn Brinkerhoff"
+date: '2024-01-05'
+output: pdf_document
+---
+
+##Loading libraries
+```{r }
+
+library(knitr)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(corrplot)
+library(caret)
+library(gridExtra)
+library(scales)
+library(Rmisc)
+library(ggrepel)
+library(randomForest)
+library(psych)
+##library(xgboost)
+
+```
+
+##Reading the data
+```{r }
+
+train <- read.csv("train.csv")
+test <- read.csv("test.csv")
+
+dim(train)
+dim(test)
+
+```
+
+
+##Data structure
+```{r }
+
+test_labels <- test$Id
+test$Id <- NULL
+train$Id <- NULL
+
+test$SalePrice <- NA
+df <- rbind(train, test)
+dim(df)
+
+head(df)
+summary(df)
+```
+
+```{r}
+
+ggplot(data=df[!is.na(df$SalePrice),], aes(x=SalePrice)) +
+        geom_histogram(fill="blue", binwidth = 10000) +
+        scale_x_continuous(breaks= seq(0, 800000, by=100000), labels = comma)
+
+summary(df$SalePrice)
+```
+
+```{r}
+
+numericVars <- which(sapply(df, is.numeric)) #index vector numeric variables
+numericVarNames <- names(numericVars) #saving names vector for use later on
+cat('There are', length(numericVars), 'numeric variables')
+
+```
+
+
+
+```{r}
+df_numVar <- df[, numericVars]
+cor_numVar <- cor(df_numVar, use="pairwise.complete.obs") #correlations of df numeric variables with NAs
+
+
+cor_sorted <- as.matrix(sort(cor_numVar[,'SalePrice'], decreasing = TRUE))
+
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.4)))
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+corrplot.mixed(cor_numVar, tl.col="black", tl.pos = "lt")
+```
+
+
+```{r}
+ggplot(data=df[!is.na(df$SalePrice),], aes(x=factor(OverallQual), y=SalePrice))+
+        geom_boxplot() + labs(x='Overdf Quality') +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma)
+```
+
+
+```{r}
+ggplot(data=df[!is.na(df$SalePrice),], aes(x=GrLivArea, y=SalePrice))+
+        geom_point(col='blue') + geom_smooth(method = "lm", se=FALSE, color="black", aes(group=1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma) +
+        geom_text_repel(aes(label = ifelse(df$GrLivArea[!is.na(df$SalePrice)]>4500, rownames(df), '')))
+```
+
+
+```{r}
+
+df[c(524, 1299), c('SalePrice', 'GrLivArea', 'OverallQual')]
+
+NAcol <- which(colSums(is.na(df)) > 0)
+sort(colSums(sapply(df[NAcol], is.na)), decreasing = TRUE)
+
+```
+##missing data
+
+```{r}
+
+df$PoolQC[is.na(df$PoolQC)] <- 'None'
+
+Qualities <- c('None' = 0, 'Po' = 1, 'Fa' = 2, 'TA' = 3, 'Gd' = 4, 'Ex' = 5)
+
+df$PoolQC<-as.integer(revalue(df$PoolQC, Qualities))
+table(df$PoolQC)
+
+df[df$PoolArea>0 & df$PoolQC==0, c('PoolArea', 'PoolQC', 'OverallQual')]
+
+```
+
+```{r}
+df$PoolQC[2421] <- 2
+df$PoolQC[2504] <- 3
+df$PoolQC[2600] <- 2
+
+
+ggplot(df[!is.na(df$SalePrice),], aes(x=PoolArea, y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma) +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..))
+```
+
+##Miscellaneous Feature
+```{r}
+
+df$MiscFeature[is.na(df$MiscFeature)] <- 'None'
+df$MiscFeature <- as.factor(df$MiscFeature)
+
+ggplot(df[!is.na(df$SalePrice),], aes(x=MiscFeature, y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma) +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..))
+
+table(df$MiscFeature)
+
+```
+##Alley
+```{r}
+
+df$Alley[is.na(df$Alley)] <- 'None'
+df$Alley <- as.factor(df$Alley)
+
+ggplot(df[!is.na(df$SalePrice),], aes(x=Alley, y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue')+
+        scale_y_continuous(breaks= seq(0, 200000, by=50000), labels = comma)
+
+table(df$Alley)
+```
+##FireplaceQu
+```{r}
+df$FireplaceQu[is.na(df$FireplaceQu)] <- 'None'
+df$FireplaceQu<-as.integer(revalue(df$FireplaceQu, Qualities))
+table(df$FireplaceQu)
+```
+
+
+```{r}
+ggplot(df[!is.na(df$LotFrontage),], aes(x=as.factor(Neighborhood), y=LotFrontage)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+for (i in 1:nrow(df)){
+        if(is.na(df$LotFrontage[i])){
+               df$LotFrontage[i] <- as.integer(median(df$LotFrontage[df$Neighborhood==df$Neighborhood[i]], na.rm=TRUE)) 
+        }
+}
+
+
+df$LotShape<-as.integer(revalue(df$LotShape, c('IR3'=0, 'IR2'=1, 'IR1'=2, 'Reg'=3)))
+table(df$LotShape)
+```
+
+```{r}
+length(which(is.na(df$GarageType) & is.na(df$GarageFinish) & is.na(df$GarageCond) & is.na(df$GarageQual)))
+
+kable(df[!is.na(df$GarageType) & is.na(df$GarageFinish), c('GarageCars', 'GarageArea', 'GarageType', 'GarageCond', 'GarageQual', 'GarageFinish')])
+
+df$GarageCond[2127] <- names(sort(-table(df$GarageCond)))[1]
+df$GarageQual[2127] <- names(sort(-table(df$GarageQual)))[1]
+df$GarageFinish[2127] <- names(sort(-table(df$GarageFinish)))[1]
+
+#display "fixed" house
+kable(df[2127, c('GarageYrBlt', 'GarageCars', 'GarageArea', 'GarageType', 'GarageCond', 'GarageQual', 'GarageFinish')])
+```
+
+```{r}
+#fixing 3 values for house 2577
+df$GarageCars[2577] <- 0
+df$GarageArea[2577] <- 0
+df$GarageType[2577] <- NA
+
+#check if NAs of the character variables are now df 158
+length(which(is.na(df$GarageType) & is.na(df$GarageFinish) & is.na(df$GarageCond) & is.na(df$GarageQual)))
+```
+
+```{r}
+df$GarageType[is.na(df$GarageType)] <- 'No Garage'
+df$GarageType <- as.factor(df$GarageType)
+table(df$GarageType)
+
+df$GarageFinish[is.na(df$GarageFinish)] <- 'None'
+Finish <- c('None'=0, 'Unf'=1, 'RFn'=2, 'Fin'=3)
+
+df$GarageFinish<-as.integer(revalue(df$GarageFinish, Finish))
+table(df$GarageFinish)
+```
+```{r}
+df$GarageQual[is.na(df$GarageQual)] <- 'None'
+df$GarageQual<-as.integer(revalue(df$GarageQual, Qualities))
+table(df$GarageQual)
+
+df$GarageCond[is.na(df$GarageCond)] <- 'None'
+df$GarageCond<-as.integer(revalue(df$GarageCond, Qualities))
+table(df$GarageCond)
+```
+
+##Basement
+```{r}
+
+length(which(is.na(df$BsmtQual) & is.na(df$BsmtCond) & is.na(df$BsmtExposure) & is.na(df$BsmtFinType1) & is.na(df$BsmtFinType2)))
+
+```
+
+```{r}
+#Find the additional NAs; BsmtFinType1 is the one with 79 NAs
+df[!is.na(df$BsmtFinType1) & (is.na(df$BsmtCond)|is.na(df$BsmtQual)|is.na(df$BsmtExposure)|is.na(df$BsmtFinType2)), c('BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinType2')]
+
+#Imputing modes.
+df$BsmtFinType2[333] <- names(sort(-table(df$BsmtFinType2)))[1]
+df$BsmtExposure[c(949, 1488, 2349)] <- names(sort(-table(df$BsmtExposure)))[1]
+df$BsmtCond[c(2041, 2186, 2525)] <- names(sort(-table(df$BsmtCond)))[1]
+df$BsmtQual[c(2218, 2219)] <- names(sort(-table(df$BsmtQual)))[1]
+```
+
+```{r}
+df$BsmtQual[is.na(df$BsmtQual)] <- 'None'
+df$BsmtQual<-as.integer(revalue(df$BsmtQual, Qualities))
+table(df$BsmtQual)
+```
+
+
+```{r}
+df$BsmtCond[is.na(df$BsmtCond)] <- 'None'
+df$BsmtCond<-as.integer(revalue(df$BsmtCond, Qualities))
+table(df$BsmtCond)
+
+df$BsmtExposure[is.na(df$BsmtExposure)] <- 'None'
+Exposure <- c('None'=0, 'No'=1, 'Mn'=2, 'Av'=3, 'Gd'=4)
+
+df$BsmtExposure<-as.integer(revalue(df$BsmtExposure, Exposure))
+table(df$BsmtExposure)
+
+df$BsmtFinType1[is.na(df$BsmtFinType1)] <- 'None'
+FinType <- c('None'=0, 'Unf'=1, 'LwQ'=2, 'Rec'=3, 'BLQ'=4, 'ALQ'=5, 'GLQ'=6)
+
+df$BsmtFinType1<-as.integer(revalue(df$BsmtFinType1, FinType))
+table(df$BsmtFinType1)
+
+df$BsmtFinType2[is.na(df$BsmtFinType2)] <- 'None'
+FinType <- c('None'=0, 'Unf'=1, 'LwQ'=2, 'Rec'=3, 'BLQ'=4, 'ALQ'=5, 'GLQ'=6)
+
+df$BsmtFinType2<-as.integer(revalue(df$BsmtFinType2, FinType))
+table(df$BsmtFinType2)
+```
+
+
+```{r}
+#display remaining NAs. Using BsmtQual as a reference for the 79 houses without basement agreed upon earlier
+df[(is.na(df$BsmtFullBath)|is.na(df$BsmtHalfBath)|is.na(df$BsmtFinSF1)|is.na(df$BsmtFinSF2)|is.na(df$BsmtUnfSF)|is.na(df$TotalBsmtSF)), c('BsmtQual', 'BsmtFullBath', 'BsmtHalfBath', 'BsmtFinSF1', 'BsmtFinSF2', 'BsmtUnfSF', 'TotalBsmtSF')]
+
+df$BsmtFullBath[is.na(df$BsmtFullBath)] <-0
+table(df$BsmtFullBath)
+
+df$BsmtHalfBath[is.na(df$BsmtHalfBath)] <-0
+table(df$BsmtHalfBath)
+
+df$BsmtFinSF1[is.na(df$BsmtFinSF1)] <-0
+
+df$BsmtFinSF2[is.na(df$BsmtFinSF2)] <-0
+
+df$BsmtUnfSF[is.na(df$BsmtUnfSF)] <-0
+
+df$TotalBsmtSF[is.na(df$TotalBsmtSF)] <-0
+```
+##Masonry
+```{r}
+#check if the 23 houses with veneer area NA are also NA in the veneer type
+length(which(is.na(df$MasVnrType) & is.na(df$MasVnrArea)))
+
+df[is.na(df$MasVnrType) & !is.na(df$MasVnrArea), c('MasVnrType', 'MasVnrArea')]
+
+#fix this veneer type by imputing the mode
+df$MasVnrType[2611] <- names(sort(-table(df$MasVnrType)))[2] #taking the 2nd value as the 1st is 'none'
+df[2611, c('MasVnrType', 'MasVnrArea')]
+
+df$MasVnrType[is.na(df$MasVnrType)] <- 'None'
+
+df[!is.na(df$SalePrice),] %>% group_by(MasVnrType) %>% summarise(median = median(SalePrice), counts=n()) %>% arrange(median)
+
+Masonry <- c('None'=0, 'BrkCmn'=0, 'BrkFace'=1, 'Stone'=2)
+df$MasVnrType<-as.integer(revalue(df$MasVnrType, Masonry))
+table(df$MasVnrType)
+
+df$MasVnrArea[is.na(df$MasVnrArea)] <-0
+```
+
+##MSZoning
+```{r}
+#imputing the mode
+df$MSZoning[is.na(df$MSZoning)] <- names(sort(-table(df$MSZoning)))[1]
+df$MSZoning <- as.factor(df$MSZoning)
+table(df$MSZoning)
+```
+
+##Kitchen
+```{r}
+df$KitchenQual[is.na(df$KitchenQual)] <- 'TA' #replace with most common value
+df$KitchenQual<-as.integer(revalue(df$KitchenQual, Qualities))
+table(df$KitchenQual)
+
+table(df$KitchenAbvGr)
+```
+##Utilities
+```{r}
+table(df$Utilities)
+
+kable(df[is.na(df$Utilities) | df$Utilities=='NoSeWa', 1:9])
+
+df$Utilities <- NULL
+```
+
+##Home functionality
+```{r}
+#impute mode for the 1 NA
+df$Functional[is.na(df$Functional)] <- names(sort(-table(df$Functional)))[1]
+
+df$Functional <- as.integer(revalue(df$Functional, c('Sal'=0, 'Sev'=1, 'Maj2'=2, 'Maj1'=3, 'Mod'=4, 'Min2'=5, 'Min1'=6, 'Typ'=7)))
+table(df$Functional)
+```
+
+##exterior variables
+```{r}
+#imputing mode
+df$Exterior1st[is.na(df$Exterior1st)] <- names(sort(-table(df$Exterior1st)))[1]
+
+df$Exterior1st <- as.factor(df$Exterior1st)
+table(df$Exterior1st)
+
+
+#imputing mode
+df$Exterior2nd[is.na(df$Exterior2nd)] <- names(sort(-table(df$Exterior2nd)))[1]
+
+df$Exterior2nd <- as.factor(df$Exterior2nd)
+table(df$Exterior2nd)
+
+
+df$ExterCond<-as.integer(revalue(df$ExterCond, Qualities))
+
+sum(table(df$ExterCond))
+```
+
+##Electrical system
+```{r}
+#imputing mode
+df$Electrical[is.na(df$Electrical)] <- names(sort(-table(df$Electrical)))[1]
+
+df$Electrical <- as.factor(df$Electrical)
+table(df$Electrical)
+
+sum(table(df$Electrical))
+```
+
+##Fence
+```{r}
+df$Fence[is.na(df$Fence)] <- 'None'
+table(df$Fence)
+
+df[!is.na(df$SalePrice),] %>% group_by(Fence) %>% summarise(median = median(SalePrice), counts=n())
+
+df$Fence <- as.factor(df$Fence)
+```
+
+
+##SaleType
+```{r}
+#imputing mode
+df$SaleType[is.na(df$SaleType)] <- names(sort(-table(df$SaleType)))[1]
+
+df$SaleType <- as.factor(df$SaleType)
+table(df$SaleType)
+
+df$SaleCondition <- as.factor(df$SaleCondition)
+table(df$SaleCondition)
+
+sum(table(df$SaleCondition))
+```
+
+
+
+```{r}
+Charcol <- names(df[,sapply(df, is.character)])
+Charcol
+
+cat('There are', length(Charcol), 'remaining columns with character values')
+```
+##Foundation
+```{r}
+#No ordinality, so converting into factors
+df$Foundation <- as.factor(df$Foundation)
+table(df$Foundation)
+
+sum(table(df$Foundation))
+```
+
+##Heating
+```{r}
+#No ordinality, so converting into factors
+df$Heating <- as.factor(df$Heating)
+table(df$Heating)
+
+sum(table(df$Heating))
+```
+
+##RoofStyle
+```{r}
+#No ordinality, so converting into factors
+df$RoofStyle <- as.factor(df$RoofStyle)
+table(df$RoofStyle)
+
+sum(table(df$RoofStyle))
+```
+
+
+##LandContour
+```{r}
+#No ordinality, so converting into factors
+df$LandContour <- as.factor(df$LandContour)
+table(df$LandContour)
+
+sum(table(df$LandContour))
+```
+
+
+##BldgType
+```{r}
+#No ordinality, so converting into factors
+df$BldgType <- as.factor(df$BldgType)
+table(df$BldgType)
+
+sum(table(df$BldgType))
+```
+
+
+##Neighborhood
+```{r}
+#No ordinality, so converting into factors
+df$Neighborhood <- as.factor(df$Neighborhood)
+table(df$Neighborhood)
+
+sum(table(df$Neighborhood))
+```
+
+##Street
+```{r}
+#Ordinal, so label encoding
+df$Street<-as.integer(revalue(df$Street, c('Grvl'=0, 'Pave'=1)))
+table(df$Street)
+
+sum(table(df$Street))
+```
+
+```{r}
+#Ordinal, so label encoding
+df$PavedDrive<-as.integer(revalue(df$PavedDrive, c('N'=0, 'P'=1, 'Y'=2)))
+table(df$PavedDrive)
+
+sum(table(df$PavedDrive))
+```
+
+```{r}
+df$MoSold <- as.factor(df$MoSold)
+```
+
+```{r}
+ys <- ggplot(df[!is.na(df$SalePrice),], aes(x=as.factor(YrSold), y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue')+
+        scale_y_continuous(breaks= seq(0, 800000, by=25000), labels = comma) +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..)) +
+        coord_cartesian(ylim = c(0, 200000)) +
+        geom_hline(yintercept=163000, linetype="dashed", color = "red") #dashed line is median SalePrice
+
+ms <- ggplot(df[!is.na(df$SalePrice),], aes(x=MoSold, y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue')+
+        scale_y_continuous(breaks= seq(0, 800000, by=25000), labels = comma) +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..)) +
+        coord_cartesian(ylim = c(0, 200000)) +
+        geom_hline(yintercept=163000, linetype="dashed", color = "red") #dashed line is median SalePrice
+
+grid.arrange(ys, ms, widths=c(1,2))
+```
+
+
+```{r}
+df$MSSubClass <- as.factor(df$MSSubClass)
+
+#revalue for better readability
+df$MSSubClass<-revalue(df$MSSubClass, c('20'='1 story 1946+', '30'='1 story 1945-', '40'='1 story unf attic', '45'='1,5 story unf', '50'='1,5 story fin', '60'='2 story 1946+', '70'='2 story 1945-', '75'='2,5 story df ages', '80'='split/multi level', '85'='split foyer', '90'='duplex df style/age', '120'='1 story PUD 1946+', '150'='1,5 story PUD df', '160'='2 story PUD 1946+', '180'='PUD multilevel', '190'='2 family conversion'))
+
+str(df$MSSubClass)
+```
+
+
+#Visualization
+```{r}
+numericVars <- which(sapply(df, is.numeric)) #index vector numeric variables
+factorVars <- which(sapply(df, is.factor)) #index vector factor variables
+cat('There are', length(numericVars), 'numeric variables, and', length(factorVars), 'categoric variables')
+```
+
+
+#Correlations
+```{r}
+df_numVar <- df[, numericVars]
+cor_numVar <- cor(df_numVar, use="pairwise.complete.obs") #correlations of df numeric variables
+
+#sort on decreasing correlations with SalePrice
+cor_sorted <- as.matrix(sort(cor_numVar[,'SalePrice'], decreasing = TRUE))
+ #select only high corelations
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.5)))
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+corrplot.mixed(cor_numVar, tl.col="black", tl.pos = "lt", tl.cex = 0.7,cl.cex = .7, number.cex=.7)
+```
+
+```{r}
+#is.na(df$SalePrice)
+```
+
+```{r}
+s1 <- ggplot(data= df, aes(x=GrLivArea)) +
+        geom_density() + labs(x='Square feet living area')
+s2 <- ggplot(data=df, aes(x=as.factor(TotRmsAbvGrd))) +
+        geom_histogram(stat='count') + labs(x='Rooms above Ground')
+s3 <- ggplot(data= df, aes(x=X1stFlrSF)) +
+        geom_density() + labs(x='Square feet first floor')
+s4 <- ggplot(data= df, aes(x=X2ndFlrSF)) +
+        geom_density() + labs(x='Square feet second floor')
+s5 <- ggplot(data= df, aes(x=TotalBsmtSF)) +
+        geom_density() + labs(x='Square feet basement')
+s6 <- ggplot(data= df[df$LotArea<100000,], aes(x=LotArea)) +
+        geom_density() + labs(x='Square feet lot')
+s7 <- ggplot(data= df, aes(x=LotFrontage)) +
+        geom_density() + labs(x='Linear feet lot frontage')
+s8 <- ggplot(data= df, aes(x=LowQualFinSF)) +
+        geom_histogram() + labs(x='Low quality square feet 1st & 2nd')
+
+layout <- matrix(c(1,2,5,3,4,8,6,7),4,2,byrow=TRUE)
+multiplot(s1, s2, s3, s4, s5, s6, s7, s8, layout=layout)
+```
+
+
+```{r}
+cor(df$GrLivArea, (df$X1stFlrSF + df$X2ndFlrSF + df$LowQualFinSF))
+```
+
+
+```{r}
+head(df[df$LowQualFinSF>0, c('GrLivArea', 'X1stFlrSF', 'X2ndFlrSF', 'LowQualFinSF')])
+
+n1 <- ggplot(df[!is.na(df$SalePrice),], aes(x=Neighborhood, y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=50000), labels = comma) +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..), size=3) +
+        geom_hline(yintercept=163000, linetype="dashed", color = "red") #dashed line is median SalePrice
+n2 <- ggplot(data=df, aes(x=Neighborhood)) +
+        geom_histogram(stat='count')+
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..), size=3)+
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+grid.arrange(n1, n2)
+```
+
+
+```{r}
+q1 <- ggplot(data=df, aes(x=as.factor(OverallQual))) +
+        geom_histogram(stat='count')
+q2 <- ggplot(data=df, aes(x=as.factor(ExterQual))) +
+        geom_histogram(stat='count')
+q3 <- ggplot(data=df, aes(x=as.factor(BsmtQual))) +
+        geom_histogram(stat='count')
+q4 <- ggplot(data=df, aes(x=as.factor(KitchenQual))) +
+        geom_histogram(stat='count')
+q5 <- ggplot(data=df, aes(x=as.factor(GarageQual))) +
+        geom_histogram(stat='count')
+q6 <- ggplot(data=df, aes(x=as.factor(FireplaceQu))) +
+        geom_histogram(stat='count')
+q7 <- ggplot(data=df, aes(x=as.factor(PoolQC))) +
+        geom_histogram(stat='count')
+
+layout <- matrix(c(1,2,8,3,4,8,5,6,7),3,3,byrow=TRUE)
+multiplot(q1, q2, q3, q4, q5, q6, q7, layout=layout)
+```
+
+
+```{r}
+ms1 <- ggplot(df[!is.na(df$SalePrice),], aes(x=MSSubClass, y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=50000), labels = comma) +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..), size=3) +
+        geom_hline(yintercept=163000, linetype="dashed", color = "red") #dashed line is median SalePrice
+ms2 <- ggplot(data=df, aes(x=MSSubClass)) +
+        geom_histogram(stat='count')+
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..), size=3) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+grid.arrange(ms1, ms2)
+```
+
+
+```{r}
+#correct error
+df$GarageYrBlt[2593] <- 2007 #this must have been a typo. GarageYrBlt=2207, YearBuilt=2006, YearRemodAdd=2007.
+
+g1 <- ggplot(data=df[df$GarageCars !=0,], aes(x=GarageYrBlt)) +
+        geom_histogram()
+g2 <- ggplot(data=df, aes(x=as.factor(GarageCars))) +
+        geom_histogram(stat='count')
+g3 <- ggplot(data= df, aes(x=GarageArea)) +
+        geom_density()
+g4 <- ggplot(data=df, aes(x=as.factor(GarageCond))) +
+        geom_histogram(stat='count')
+g5 <- ggplot(data=df, aes(x=GarageType)) +
+        geom_histogram(stat='count')
+g6 <- ggplot(data=df, aes(x=as.factor(GarageQual))) +
+        geom_histogram(stat='count')
+g7 <- ggplot(data=df, aes(x=as.factor(GarageFinish))) +
+        geom_histogram(stat='count')
+
+layout <- matrix(c(1,5,5,2,3,8,6,4,7),3,3,byrow=TRUE)
+multiplot(g1, g2, g3, g4, g5, g6, g7, layout=layout)
+```
+
+
+
+```{r}
+b1 <- ggplot(data=df, aes(x=BsmtFinSF1)) +
+        geom_histogram() + labs(x='Type 1 finished square feet')
+b2 <- ggplot(data=df, aes(x=BsmtFinSF2)) +
+        geom_histogram()+ labs(x='Type 2 finished square feet')
+b3 <- ggplot(data=df, aes(x=BsmtUnfSF)) +
+        geom_histogram()+ labs(x='Unfinished square feet')
+b4 <- ggplot(data=df, aes(x=as.factor(BsmtFinType1))) +
+        geom_histogram(stat='count')+ labs(x='Rating of Type 1 finished area')
+b5 <- ggplot(data=df, aes(x=as.factor(BsmtFinType2))) +
+        geom_histogram(stat='count')+ labs(x='Rating of Type 2 finished area')
+b6 <- ggplot(data=df, aes(x=as.factor(BsmtQual))) +
+        geom_histogram(stat='count')+ labs(x='Height of the basement')
+b7 <- ggplot(data=df, aes(x=as.factor(BsmtCond))) +
+        geom_histogram(stat='count')+ labs(x='Rating of general condition')
+b8 <- ggplot(data=df, aes(x=as.factor(BsmtExposure))) +
+        geom_histogram(stat='count')+ labs(x='Walkout or garden level wdfs')
+
+layout <- matrix(c(1,2,3,4,5,9,6,7,8),3,3,byrow=TRUE)
+multiplot(b1, b2, b3, b4, b5, b6, b7, b8, layout=layout)
+
+```
+
+
+
+```{r}
+df$TotBathrooms <- df$FullBath + (df$HalfBath*0.5) + df$BsmtFullBath + (df$BsmtHalfBath*0.5)
+
+tb1 <- ggplot(data=df[!is.na(df$SalePrice),], aes(x=as.factor(TotBathrooms), y=SalePrice))+
+        geom_point(col='blue') + geom_smooth(method = "lm", se=FALSE, color="black", aes(group=1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma)
+tb2 <- ggplot(data=df, aes(x=as.factor(TotBathrooms))) +
+        geom_histogram(stat='count')
+grid.arrange(tb1, tb2)
+```
+
+
+
+```{r}
+df$Remod <- ifelse(df$YearBuilt==df$YearRemodAdd, 0, 1) #0=No Remodeling, 1=Remodeling
+df$Age <- as.numeric(df$YrSold)-df$YearRemodAdd
+
+ggplot(data=df[!is.na(df$SalePrice),], aes(x=Age, y=SalePrice))+
+        geom_point(col='blue') + geom_smooth(method = "lm", se=FALSE, color="black", aes(group=1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma)
+```
+
+
+
+```{r}
+cor(df$SalePrice[!is.na(df$SalePrice)], df$Age[!is.na(df$SalePrice)])
+
+ggplot(df[!is.na(df$SalePrice),], aes(x=as.factor(Remod), y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..), size=6) +
+        scale_y_continuous(breaks= seq(0, 800000, by=50000), labels = comma) +
+        theme_grey(base_size = 18) +
+        geom_hline(yintercept=163000, linetype="dashed") #dashed line is median SalePrice
+```
+
+
+```{r}
+df$IsNew <- ifelse(df$YrSold==df$YearBuilt, 1, 0)
+table(df$IsNew)
+
+```
+
+
+```{r}
+ggplot(df[!is.na(df$SalePrice),], aes(x=as.factor(IsNew), y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..), size=6) +
+        scale_y_continuous(breaks= seq(0, 800000, by=50000), labels = comma) +
+        theme_grey(base_size = 18) +
+        geom_hline(yintercept=163000, linetype="dashed") #dashed line is median SalePrice
+```
+
+
+```{r}
+df$YrSold <- as.factor(df$YrSold) #the numeric version is now not needed anymore
+```
+
+```{r}
+nb1 <- ggplot(df[!is.na(df$SalePrice),], aes(x=reorder(Neighborhood, SalePrice, FUN=median), y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') + labs(x='Neighborhood', y='Median SalePrice') +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=50000), labels = comma) +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..), size=3) +
+        geom_hline(yintercept=163000, linetype="dashed", color = "red") #dashed line is median SalePrice
+nb2 <- ggplot(df[!is.na(df$SalePrice),], aes(x=reorder(Neighborhood, SalePrice, FUN=mean), y=SalePrice)) +
+        geom_bar(stat='summary', fun.y = "mean", fill='blue') + labs(x='Neighborhood', y="Mean SalePrice") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=50000), labels = comma) +
+        geom_label(stat = "count", aes(label = ..count.., y = ..count..), size=3) +
+        geom_hline(yintercept=163000, linetype="dashed", color = "red") #dashed line is median SalePrice
+grid.arrange(nb1, nb2)
+```
+
+
+```{r}
+df$NeighRich[df$Neighborhood %in% c('StoneBr', 'NridgHt', 'NoRidge')] <- 2
+df$NeighRich[!df$Neighborhood %in% c('MeadowV', 'IDOTRR', 'BrDale', 'StoneBr', 'NridgHt', 'NoRidge')] <- 1
+df$NeighRich[df$Neighborhood %in% c('MeadowV', 'IDOTRR', 'BrDale')] <- 0
+
+table(df$NeighRich)
+```
+
+
+
+```{r}
+df$TotalSqFeet <- df$GrLivArea + df$TotalBsmtSF
+
+ggplot(data=df[!is.na(df$SalePrice),], aes(x=TotalSqFeet, y=SalePrice))+
+        geom_point(col='blue') + geom_smooth(method = "lm", se=FALSE, color="black", aes(group=1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma) +
+        geom_text_repel(aes(label = ifelse(df$GrLivArea[!is.na(df$SalePrice)]>4500, rownames(df), '')))
+```
+
+```{r}
+cor(df$SalePrice, df$TotalSqFeet, use= "pairwise.complete.obs")
+```
+
+
+```{r}
+cor(df$SalePrice[-c(524, 1299)], df$TotalSqFeet[-c(524, 1299)], use= "pairwise.complete.obs")
+
+
+```
+
+
+```{r}
+df$TotalPorchSF <- df$OpenPorchSF + df$EnclosedPorch + df$X3SsnPorch + df$ScreenPorch
+
+cor(df$SalePrice, df$TotalPorchSF, use= "pairwise.complete.obs")
+
+ggplot(data=df[!is.na(df$SalePrice),], aes(x=TotalPorchSF, y=SalePrice))+
+        geom_point(col='blue') + geom_smooth(method = "lm", se=FALSE, color="black", aes(group=1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000), labels = comma)
+```
+
+#Preparing data for modeling
+```{r}
+
+dropVars <- c('YearRemodAdd', 'GarageYrBlt', 'GarageArea', 'GarageCond', 'TotalBsmtSF', 'TotalRmsAbvGrd', 'BsmtFinSF1')
+
+df <- df[,!(names(df) %in% dropVars)]
+
+
+df <- df[-c(524, 1299),]
+```
+
+```{r}
+numericVarNames <- numericVarNames[!(numericVarNames %in% c('MSSubClass', 'MoSold', 'YrSold', 'SalePrice', 'OverdfQual', 'OverdfCond'))] #numericVarNames was created before having done anything
+numericVarNames <- append(numericVarNames, c('Age', 'TotalPorchSF', 'TotBathrooms', 'TotalSqFeet'))
+
+DFnumeric <- df[, names(df) %in% numericVarNames]
+
+DFfactors <- df[, !(names(df) %in% numericVarNames)]
+DFfactors <- DFfactors[, names(DFfactors) != 'SalePrice']
+
+cat('There are', length(DFnumeric), 'numeric variables, and', length(DFfactors), 'factor variables')
+```
+
+
+
+```{r}
+for(i in 1:ncol(DFnumeric)){
+        if (abs(skew(DFnumeric[,i]))>0.8){
+                DFnumeric[,i] <- log(DFnumeric[,i] +1)
+        }
+}
+
+
+PreNum <- preProcess(DFnumeric, method=c("center", "scale"))
+print(PreNum)
+```
+
+
+```{r}
+DFnorm <- predict(PreNum, DFnumeric)
+dim(DFnorm)
+```
+
+
+```{r}
+DFdummies <- as.data.frame(model.matrix(~.-1, DFfactors))
+dim(DFdummies)
+
+
+#check if some values are absent in the test set
+ZerocolTest <- which(colSums(DFdummies[(nrow(df[!is.na(df$SalePrice),])+1):nrow(df),])==0)
+colnames(DFdummies[ZerocolTest])
+
+DFdummies <- DFdummies[,-ZerocolTest] #removing predictors
+```
+
+
+```{r}
+#check if some values are absent in the train set
+ZerocolTrain <- which(colSums(DFdummies[1:nrow(df[!is.na(df$SalePrice),]),])==0)
+colnames(DFdummies[ZerocolTrain])
+
+DFdummies <- DFdummies[,-ZerocolTrain] #removing predictor
+
+fewOnes <- which(colSums(DFdummies[1:nrow(df[!is.na(df$SalePrice),]),])<10)
+colnames(DFdummies[fewOnes])
+```
+
+
+
+```{r}
+DFdummies <- DFdummies[,-fewOnes] #removing predictors
+dim(DFdummies)
+
+combined <- cbind(DFnorm, DFdummies) #combining df (now numeric) predictors into one dataframe 
+```
+
+##Dealing with skewness of response variable
+```{r}
+skew(df$SalePrice)
+
+qqnorm(df$SalePrice)
+qqline(df$SalePrice)
+```
+
+
+```{r}
+df$SalePrice <- log(df$SalePrice) #default is the natural logarithm, "+1" is not necessary as there are no 0's
+skew(df$SalePrice)
+
+qqnorm(df$SalePrice)
+qqline(df$SalePrice)
+```
+
+```{r}
+train1 <- combined[!is.na(df$SalePrice),]
+test1 <- combined[is.na(df$SalePrice),]
+
+```
+
+
+#Lasso regression model
+```{r}
+set.seed(27042018)
+
+my_control <-trainControl(method="cv", number=5)
+lassoGrid <- expand.grid(alpha = 1, lambda = seq(0.001,0.1,by = 0.0005))
+
+lasso_mod <- train(x=train1, y= df$SalePrice[!is.na(df$SalePrice)], 
+                   method='glmnet', 
+                   trControl= my_control,
+                   tuneGrid=lassoGrid) 
+lasso_mod$bestTune
+
+
+
+```
+
+```{r}
+
+min(lasso_mod$results$RMSE)
+
+#print(lasso_mod$results)
+summary(lasso_mod$results)
+
+```
+
+
+```{r}
+lassoVarImp <- varImp(lasso_mod,scale=F)
+lassoImportance <- lassoVarImp$importance
+
+varsSelected <- length(which(lassoImportance$Overdf!=0))
+varsNotSelected <- length(which(lassoImportance$Overdf==0))
+
+cat('Lasso uses', varsSelected, 'variables in its model, and did not select', varsNotSelected, 'variables.')
+```
+
+
+
+```{r}
+LassoPred <- predict(lasso_mod, test1)
+predictions_lasso <- exp(LassoPred) #need to reverse the log to the real values
+head(predictions_lasso)
+
+
+```
+
+
+
