@@ -4,5 +4,5 @@
 
 [Linear Regression with Medical Cost Personal Datasets Jupyter Notebook.pdf](Linear-Regression-with-Medical-Cost-Personal-Datasets-Jupyter-Notebook.pdf)
 
-[House Prices.pdf](House-Prices.pdf)
+[House Prices Lasso Regression.pdf](House-Prices.pdf)
 
