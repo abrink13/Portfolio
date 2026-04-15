@@ -6,5 +6,4 @@
 
 [House Prices Lasso Regression.pdf](House-Prices.pdf)
 
-[Predicting-Breast-Cancer-Malignancy.pdf](Predicting-Heart-Disease-Risk-Using-Clinical-Variables.pdf
-)
+[Predicting-Breast-Cancer-Malignancy.pdf](revised_breast_cancer_portfolio_project.pdf)
