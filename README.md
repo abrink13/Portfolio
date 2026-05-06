@@ -1,6 +1,6 @@
-#Autumn Park
+# Autumn Park
 
-##Data Analyst | Aspiring Biomedical Informatics Researcher
+## Data Analyst | Aspiring Biomedical Informatics Researcher
 
 I am a data analyst with experience in healthcare and financial analytics, with a growing focus on biomedical informatics research. My work centers on developing predictive models that balance performance, interpretability, and real-world usability in clinical settings.
 
