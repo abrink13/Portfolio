@@ -4,6 +4,8 @@
 
 [Diabetes Prediction with Logistic Regression.pdf](Diabetes-Prediction-with-Logistic-Regression.pdf)
 
+
+
 [Linear Regression with Medical Cost Personal Datasets Jupyter Notebook.pdf](Linear-Regression-with-Medical-Cost-Personal-Datasets-Jupyter-Notebook.pdf)
 
 [Heart-Disease-Risk.pdf](Predicting-Heart-Disease-Risk-Using-Clinical-Variables.pdf)
