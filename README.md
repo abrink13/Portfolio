@@ -7,9 +7,9 @@ A PhD-preparation research project in biomedical informatics evaluating logistic
 
 Links:
 
-[Research Paper (PDF)](Balancing_Predictive_Performance_and_Interpretability_in_Clinical_Risk_Models.pdf)
+[Autumn_Park_Biomedical_Informatics_Research_Paper.pdf](Balancing_Predictive_Performance_and_Interpretability_in_Clinical_Risk_Models.pdf)
 
-[R Markdown Code / Reproducible Analysis](Diabetes-Prediction-with-Logistic-Regression.pdf)
+[Autumn_Park_Diabetes_Prediction_RMarkdown_Code](Diabetes-Prediction-with-Logistic-Regression.pdf)
 
 
 
