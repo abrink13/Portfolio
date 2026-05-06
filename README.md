@@ -1,4 +1,13 @@
-# Research & Data Science Projects
+#Autumn Park
+
+##Data Analyst | Aspiring Biomedical Informatics Researcher
+
+I am a data analyst with experience in healthcare and financial analytics, with a growing focus on biomedical informatics research. My work centers on developing predictive models that balance performance, interpretability, and real-world usability in clinical settings.
+
+I am particularly interested in clinical predictive modeling, interpretable machine learning, and data-driven clinical decision support systems, with the goal of translating data into actionable insights that improve patient outcomes.
+
+I am especially interested in research environments that emphasize translational informatics and the integration of predictive models into real-world clinical workflows, such as the University of Utah Department of Biomedical Informatics.
+
 
 ## Featured Research Project Balancing Predictive Performance and Interpretability in Clinical Risk Models
 
