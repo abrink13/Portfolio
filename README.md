@@ -1,7 +1,7 @@
 # Portfolio
 
 
-[Balancing Predictive Performance and Interpretability in Clinical Risk Models](Balancing Predictive Performance and Interpretability in Clinical Risk Models.docx)
+[Balancing Predictive Performance and Interpretability in Clinical Risk Models.docx](Balancing Predictive Performance and Interpretability in Clinical Risk Models.docx)
 
 [Diabetes-Prediction-with-Logistic-Regression.pdf](Diabetes-Prediction-with-Logistic-Regression.pdf)
 
