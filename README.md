@@ -1,9 +1,9 @@
-# Portfolio
+# Research & Data Science Projects
 
-Featured Research Project
+# Featured Research Project
 
-Balancing Predictive Performance and Interpretability in Clinical Risk Models
-A PhD-preparation research project in biomedical informatics evaluating logistic regression, LASSO, random forest, and XGBoost for diabetes prediction, with calibration, interpretability, and DeLong AUC testing.
+This research examines whether interpretable statistical models can achieve comparable performance to modern machine learning methods in clinical risk prediction. The study integrates calibration, interpretability, and statistical testing to evaluate model suitability for clinical decision support.
+Compared logistic regression, LASSO, random forest, and XGBoost using cross-validation, ROC-AUC, calibration curves, Brier scores, and SHAP-based interpretability.
 
 Links:
 
@@ -11,10 +11,11 @@ Links:
 
 [Autumn_Park_Diabetes_Prediction_RMarkdown_Code](Diabetes-Prediction-with-Logistic-Regression.pdf)
 
+This project reflects my research interest in interpretable machine learning and clinical decision support systems.
 
 
 
-Additional Data Science Projects:
+## Additional Data Science Projects:
 
 [Linear Regression with Medical Cost Personal Datasets Jupyter Notebook.pdf](Linear-Regression-with-Medical-Cost-Personal-Datasets-Jupyter-Notebook.pdf)
 
