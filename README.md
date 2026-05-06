@@ -1,6 +1,6 @@
 # Research & Data Science Projects
 
-# Featured Research Project
+## Featured Research Project
 
 This research examines whether interpretable statistical models can achieve comparable performance to modern machine learning methods in clinical risk prediction. The study integrates calibration, interpretability, and statistical testing to evaluate model suitability for clinical decision support.
 Compared logistic regression, LASSO, random forest, and XGBoost using cross-validation, ROC-AUC, calibration curves, Brier scores, and SHAP-based interpretability.
